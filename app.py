@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import requests
+import re
 
 # Load Mapbox token from Streamlit secrets
 MAPBOX_TOKEN = st.secrets["mapbox"]["token"]
@@ -24,11 +25,36 @@ def get_drive_distance(start, end):
     miles = meters / 1609.344
     return round(miles, 2)
 
-# Parse coordinate string "lat, lon"
+# Parse coordinate string in multiple formats
 def parse_coords(coord_str):
-    coord_str = str(coord_str).replace("°", "").strip()
-    lat, lon = map(float, coord_str.split(","))
-    return lat, lon
+    """
+    Handles:
+    - "45.490665, -118.416460"
+    - "Lat: 36.342148° N Lon: 79.818933° W"
+    """
+    s = str(coord_str).strip()
+    s = re.sub(r'[°]', '', s, flags=re.IGNORECASE)
+    s = s.replace("Lat:", "").replace("Lon:", "")
+    parts = re.split(r'[ ,]+', s)
+    parts = [p for p in parts if p]
+
+    # If cardinal directions are present
+    if any(d.upper() in parts for d in ["N", "S", "E", "W"]):
+        lat_val = float(parts[0])
+        lat_dir = parts[1].upper()
+        lon_val = float(parts[2])
+        lon_dir = parts[3].upper()
+
+        if lat_dir == "S":
+            lat_val = -lat_val
+        if lon_dir == "W":
+            lon_val = -lon_val
+
+        return lat_val, lon_val
+    else:
+        # Assume simple "lat, lon"
+        lat, lon = map(float, parts[:2])
+        return lat, lon
 
 # Reverse geocode to get state name
 def get_state_from_coords(coords):
@@ -45,7 +71,7 @@ st.title("📍 Bid Mileage Calculator with State Lookup")
 st.markdown("Enter coordinates manually OR upload a CSV/XLSX with columns: "
             "`Line Name`, `Launcher Coordinates`, `Receiver Coordinates`.")
 
-launcher_input = st.text_area("Launcher Coordinates (e.g. 45.490665, -118.416460)")
+launcher_input = st.text_area("Launcher Coordinates (e.g. 45.490665, -118.416460 or Lat: 36.342148° N Lon: 79.818933° W)")
 receiver_input = st.text_area("Receiver Coordinates (e.g. 45.929377, -119.409545)")
 
 uploaded_file = st.file_uploader("Upload CSV or Excel file", type=["csv", "xlsx"])

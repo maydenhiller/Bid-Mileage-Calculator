@@ -1,5 +1,7 @@
 import streamlit as st
+import pandas as pd
 import requests
+import io
 
 # Fixed office location
 OFFICE_ADDRESS = "28630 East 760 Road Crescent Ok 73028"
@@ -11,6 +13,8 @@ def geocode_address(address):
     url = f"https://api.mapbox.com/geocoding/v5/mapbox.places/{address}.json"
     params = {"access_token": MAPBOX_TOKEN}
     response = requests.get(url, params=params).json()
+    if "features" not in response or not response["features"]:
+        raise ValueError("Office geocoding failed.")
     coords = response["features"][0]["geometry"]["coordinates"]
     return coords[1], coords[0]  # lat, lon
 
@@ -24,6 +28,8 @@ def get_drive_distance(start, end):
         "geometries": "geojson"
     }
     response = requests.get(url, params=params).json()
+    if "routes" not in response or not response["routes"]:
+        return None
     meters = response["routes"][0]["distance"]
     miles = meters / 1609.344
     return round(miles, 2)
@@ -39,11 +45,14 @@ st.title("📍 Bid Mileage Calculator")
 
 launcher_input = st.text_area("Launcher Coordinates (e.g. 45.490665°, -118.416460°)")
 receiver_input = st.text_area("Receiver Coordinates (e.g. 45.929377°, -119.409545°)")
-tracker_count = st.number_input("Number of Trackers", min_value=1, step=1)
 
-if st.button("Calculate Mileage"):
+uploaded_file = st.file_uploader("Upload CSV or Excel file", type=["csv", "xlsx"])
+
+office_coords = geocode_address(OFFICE_ADDRESS)
+
+# Manual input logic
+if launcher_input and receiver_input:
     try:
-        office_coords = geocode_address(OFFICE_ADDRESS)
         launcher_coords = parse_coords(launcher_input)
         receiver_coords = parse_coords(receiver_input)
 
@@ -51,10 +60,36 @@ if st.button("Calculate Mileage"):
         dist_to_receiver = get_drive_distance(office_coords, receiver_coords)
 
         furthest = max(dist_to_launcher, dist_to_receiver)
-        total_mileage = round(furthest * tracker_count, 2)
-
         st.success(f"🏁 Furthest Distance: {furthest} miles")
-        st.info(f"📦 Total Bid Mileage: {total_mileage} miles")
 
     except Exception as e:
         st.error(f"Error: {e}")
+
+# File upload logic
+if uploaded_file:
+    try:
+        if uploaded_file.name.endswith(".csv"):
+            df = pd.read_csv(uploaded_file)
+        else:
+            df = pd.read_excel(uploaded_file)
+
+        distances = []
+        for _, row in df.iterrows():
+            try:
+                launcher = parse_coords(row["Launcher Coordinates"])
+                receiver = parse_coords(row["Receiver Coordinates"])
+                d1 = get_drive_distance(office_coords, launcher)
+                d2 = get_drive_distance(office_coords, receiver)
+                distances.append(max(d1, d2))
+            except:
+                distances.append(None)
+
+        df["Furthest Distance (mi)"] = distances
+        st.dataframe(df)
+
+        # Downloadable CSV
+        csv_bytes = df.to_csv(index=False).encode("utf-8")
+        st.download_button("📥 Download Results CSV", data=csv_bytes, file_name="bid_mileage.csv", mime="text/csv")
+
+    except Exception as e:
+        st.error(f"File processing error: {e}")

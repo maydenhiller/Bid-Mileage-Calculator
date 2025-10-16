@@ -39,14 +39,16 @@ def parse_coords(coord_str):
     - "45.490665, -118.416460"
     - "Lat: 36.342148° N Lon: 79.818933° W"
     - "39°15'59.54\"N 76°55'39.10\"W"
+    - "39° 1'47.10\"N 77°15'42.10\"W"
     """
     s = str(coord_str).strip()
     s = s.replace("\n", " ").replace("Lat:", "").replace("Lon:", "")
     s = re.sub(r'[°]', '°', s)
 
-    # Try DMS pattern
+    # Try DMS pattern (tolerant of spaces)
     dms_pattern = re.compile(
-        r'(\d+)[° ](\d+)[\' ](\d+(?:\.\d+)?)[\"]?([NSEW])', re.IGNORECASE
+        r'(\d+)\s*°\s*(\d+)\s*\'\s*(\d+(?:\.\d+)?)\s*"?\s*([NSEW])',
+        re.IGNORECASE
     )
     matches = dms_pattern.findall(s)
     if len(matches) >= 2:

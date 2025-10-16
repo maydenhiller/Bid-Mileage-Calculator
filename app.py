@@ -1,22 +1,13 @@
 import streamlit as st
 import pandas as pd
 import requests
-import io
 
-# Fixed office location
-OFFICE_ADDRESS = "28630 East 760 Road Crescent Ok 73028"
-MAPBOX_TOKEN = "YOUR_MAPBOX_ACCESS_TOKEN"
+# Load Mapbox token from Streamlit secrets
+MAPBOX_TOKEN = st.secrets["mapbox"]["token"]
 
-# Geocode office address to coordinates
-@st.cache_data
-def geocode_address(address):
-    url = f"https://api.mapbox.com/geocoding/v5/mapbox.places/{address}.json"
-    params = {"access_token": MAPBOX_TOKEN}
-    response = requests.get(url, params=params).json()
-    if "features" not in response or not response["features"]:
-        raise ValueError("Office geocoding failed.")
-    coords = response["features"][0]["geometry"]["coordinates"]
-    return coords[1], coords[0]  # lat, lon
+# Hard-coded office coordinates (lat, lon) for Crescent, OK
+# Replace with exact coordinates of your office if needed
+OFFICE_COORDS = (35.8239, -97.5920)
 
 # Calculate driving distance using Mapbox Directions API
 def get_drive_distance(start, end):
@@ -34,21 +25,22 @@ def get_drive_distance(start, end):
     miles = meters / 1609.344
     return round(miles, 2)
 
-# Parse coordinate string
+# Parse coordinate string "lat, lon"
 def parse_coords(coord_str):
-    coord_str = coord_str.replace("°", "").strip()
+    coord_str = str(coord_str).replace("°", "").strip()
     lat, lon = map(float, coord_str.split(","))
     return lat, lon
 
-# UI
+# Streamlit UI
 st.title("📍 Bid Mileage Calculator")
 
-launcher_input = st.text_area("Launcher Coordinates (e.g. 45.490665°, -118.416460°)")
-receiver_input = st.text_area("Receiver Coordinates (e.g. 45.929377°, -119.409545°)")
+st.markdown("Enter coordinates manually OR upload a CSV/XLSX with columns: "
+            "`Line Name`, `Launcher Coordinates`, `Receiver Coordinates`.")
+
+launcher_input = st.text_area("Launcher Coordinates (e.g. 45.490665, -118.416460)")
+receiver_input = st.text_area("Receiver Coordinates (e.g. 45.929377, -119.409545)")
 
 uploaded_file = st.file_uploader("Upload CSV or Excel file", type=["csv", "xlsx"])
-
-office_coords = geocode_address(OFFICE_ADDRESS)
 
 # Manual input logic
 if launcher_input and receiver_input:
@@ -56,14 +48,17 @@ if launcher_input and receiver_input:
         launcher_coords = parse_coords(launcher_input)
         receiver_coords = parse_coords(receiver_input)
 
-        dist_to_launcher = get_drive_distance(office_coords, launcher_coords)
-        dist_to_receiver = get_drive_distance(office_coords, receiver_coords)
+        dist_to_launcher = get_drive_distance(OFFICE_COORDS, launcher_coords)
+        dist_to_receiver = get_drive_distance(OFFICE_COORDS, receiver_coords)
 
-        furthest = max(dist_to_launcher, dist_to_receiver)
-        st.success(f"🏁 Furthest Distance: {furthest} miles")
+        if dist_to_launcher is None or dist_to_receiver is None:
+            st.error("Could not calculate one or both distances.")
+        else:
+            furthest = max(dist_to_launcher, dist_to_receiver)
+            st.success(f"🏁 Furthest Distance from Office: {furthest} miles")
 
     except Exception as e:
-        st.error(f"Error: {e}")
+        st.error(f"Error parsing coordinates: {e}")
 
 # File upload logic
 if uploaded_file:
@@ -78,10 +73,13 @@ if uploaded_file:
             try:
                 launcher = parse_coords(row["Launcher Coordinates"])
                 receiver = parse_coords(row["Receiver Coordinates"])
-                d1 = get_drive_distance(office_coords, launcher)
-                d2 = get_drive_distance(office_coords, receiver)
-                distances.append(max(d1, d2))
-            except:
+                d1 = get_drive_distance(OFFICE_COORDS, launcher)
+                d2 = get_drive_distance(OFFICE_COORDS, receiver)
+                if d1 is None or d2 is None:
+                    distances.append(None)
+                else:
+                    distances.append(max(d1, d2))
+            except Exception:
                 distances.append(None)
 
         df["Furthest Distance (mi)"] = distances
@@ -89,7 +87,10 @@ if uploaded_file:
 
         # Downloadable CSV
         csv_bytes = df.to_csv(index=False).encode("utf-8")
-        st.download_button("📥 Download Results CSV", data=csv_bytes, file_name="bid_mileage.csv", mime="text/csv")
+        st.download_button("📥 Download Results CSV",
+                           data=csv_bytes,
+                           file_name="bid_mileage.csv",
+                           mime="text/csv")
 
     except Exception as e:
         st.error(f"File processing error: {e}")

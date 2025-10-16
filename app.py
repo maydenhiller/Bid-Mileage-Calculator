@@ -6,7 +6,6 @@ import requests
 MAPBOX_TOKEN = st.secrets["mapbox"]["token"]
 
 # Hard-coded office coordinates (lat, lon) for Crescent, OK
-# Replace with exact coordinates of your office if needed
 OFFICE_COORDS = (35.8239, -97.5920)
 
 # Calculate driving distance using Mapbox Directions API
@@ -31,8 +30,17 @@ def parse_coords(coord_str):
     lat, lon = map(float, coord_str.split(","))
     return lat, lon
 
+# Reverse geocode to get state name
+def get_state_from_coords(coords):
+    url = f"https://api.mapbox.com/geocoding/v5/mapbox.places/{coords[1]},{coords[0]}.json"
+    params = {"access_token": MAPBOX_TOKEN, "types": "region"}
+    response = requests.get(url, params=params).json()
+    if "features" in response and response["features"]:
+        return response["features"][0]["text"]
+    return "Unknown"
+
 # Streamlit UI
-st.title("📍 Bid Mileage Calculator")
+st.title("📍 Bid Mileage Calculator with State Lookup")
 
 st.markdown("Enter coordinates manually OR upload a CSV/XLSX with columns: "
             "`Line Name`, `Launcher Coordinates`, `Receiver Coordinates`.")
@@ -55,7 +63,12 @@ if launcher_input and receiver_input:
             st.error("Could not calculate one or both distances.")
         else:
             furthest = max(dist_to_launcher, dist_to_receiver)
+            launcher_state = get_state_from_coords(launcher_coords)
+            receiver_state = get_state_from_coords(receiver_coords)
+
             st.success(f"🏁 Furthest Distance from Office: {furthest} miles")
+            st.info(f"Launcher is in: {launcher_state}")
+            st.info(f"Receiver is in: {receiver_state}")
 
     except Exception as e:
         st.error(f"Error parsing coordinates: {e}")
@@ -69,6 +82,9 @@ if uploaded_file:
             df = pd.read_excel(uploaded_file)
 
         distances = []
+        launcher_states = []
+        receiver_states = []
+
         for _, row in df.iterrows():
             try:
                 launcher = parse_coords(row["Launcher Coordinates"])
@@ -79,10 +95,18 @@ if uploaded_file:
                     distances.append(None)
                 else:
                     distances.append(max(d1, d2))
+
+                launcher_states.append(get_state_from_coords(launcher))
+                receiver_states.append(get_state_from_coords(receiver))
             except Exception:
                 distances.append(None)
+                launcher_states.append("Unknown")
+                receiver_states.append("Unknown")
 
+        df["Launcher State"] = launcher_states
+        df["Receiver State"] = receiver_states
         df["Furthest Distance (mi)"] = distances
+
         st.dataframe(df)
 
         # Downloadable CSV

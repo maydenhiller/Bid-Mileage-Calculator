@@ -25,36 +25,54 @@ def get_drive_distance(start, end):
     miles = meters / 1609.344
     return round(miles, 2)
 
+# Convert DMS to decimal degrees
+def dms_to_dd(degrees, minutes, seconds, direction):
+    dd = float(degrees) + float(minutes)/60 + float(seconds)/3600
+    if direction in ["S", "W"]:
+        dd *= -1
+    return dd
+
 # Parse coordinate string in multiple formats
 def parse_coords(coord_str):
     """
     Handles:
     - "45.490665, -118.416460"
     - "Lat: 36.342148° N Lon: 79.818933° W"
+    - "39°15'59.54\"N 76°55'39.10\"W"
     """
     s = str(coord_str).strip()
-    s = re.sub(r'[°]', '', s, flags=re.IGNORECASE)
-    s = s.replace("Lat:", "").replace("Lon:", "")
-    parts = re.split(r'[ ,]+', s)
-    parts = [p for p in parts if p]
+    s = s.replace("\n", " ").replace("Lat:", "").replace("Lon:", "")
+    s = re.sub(r'[°]', '°', s)
 
-    # If cardinal directions are present
+    # Try DMS pattern
+    dms_pattern = re.compile(
+        r'(\d+)[° ](\d+)[\' ](\d+(?:\.\d+)?)[\"]?([NSEW])', re.IGNORECASE
+    )
+    matches = dms_pattern.findall(s)
+    if len(matches) >= 2:
+        lat_deg, lat_min, lat_sec, lat_dir = matches[0]
+        lon_deg, lon_min, lon_sec, lon_dir = matches[1]
+        lat = dms_to_dd(lat_deg, lat_min, lat_sec, lat_dir.upper())
+        lon = dms_to_dd(lon_deg, lon_min, lon_sec, lon_dir.upper())
+        return lat, lon
+
+    # Try labeled decimal with N/S/E/W
+    parts = re.split(r'[ ,]+', s.replace("°", "").strip())
+    parts = [p for p in parts if p]
     if any(d.upper() in parts for d in ["N", "S", "E", "W"]):
         lat_val = float(parts[0])
         lat_dir = parts[1].upper()
         lon_val = float(parts[2])
         lon_dir = parts[3].upper()
-
         if lat_dir == "S":
             lat_val = -lat_val
         if lon_dir == "W":
             lon_val = -lon_val
-
         return lat_val, lon_val
-    else:
-        # Assume simple "lat, lon"
-        lat, lon = map(float, parts[:2])
-        return lat, lon
+
+    # Fallback: simple decimal degrees
+    lat, lon = map(float, parts[:2])
+    return lat, lon
 
 # Reverse geocode to get state name
 def get_state_from_coords(coords):
@@ -71,8 +89,8 @@ st.title("📍 Bid Mileage Calculator with State Lookup")
 st.markdown("Enter coordinates manually OR upload a CSV/XLSX with columns: "
             "`Line Name`, `Launcher Coordinates`, `Receiver Coordinates`.")
 
-launcher_input = st.text_area("Launcher Coordinates (e.g. 45.490665, -118.416460 or Lat: 36.342148° N Lon: 79.818933° W)")
-receiver_input = st.text_area("Receiver Coordinates (e.g. 45.929377, -119.409545)")
+launcher_input = st.text_area("Launcher Coordinates")
+receiver_input = st.text_area("Receiver Coordinates")
 
 uploaded_file = st.file_uploader("Upload CSV or Excel file", type=["csv", "xlsx"])
 

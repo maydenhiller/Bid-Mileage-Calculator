@@ -34,13 +34,6 @@ def dms_to_dd(degrees, minutes, seconds, direction):
 
 # Parse coordinate string in multiple formats
 def parse_coords(coord_str):
-    """
-    Handles:
-    - "45.490665, -118.416460"
-    - "Lat: 36.342148° N Lon: 79.818933° W"
-    - "39°15'59.54\"N 76°55'39.10\"W"
-    - "39° 1'47.10\"N 77°15'42.10\"W"
-    """
     s = str(coord_str).strip()
     s = s.replace("\n", " ").replace("Lat:", "").replace("Lon:", "")
     s = re.sub(r'[°]', '°', s)
@@ -76,17 +69,23 @@ def parse_coords(coord_str):
     lat, lon = map(float, parts[:2])
     return lat, lon
 
-# Reverse geocode to get state name
-def get_state_from_coords(coords):
+# Reverse geocode to get town and state
+def get_location_details(coords):
     url = f"https://api.mapbox.com/geocoding/v5/mapbox.places/{coords[1]},{coords[0]}.json"
-    params = {"access_token": MAPBOX_TOKEN, "types": "region"}
+    params = {"access_token": MAPBOX_TOKEN}
     response = requests.get(url, params=params).json()
-    if "features" in response and response["features"]:
-        return response["features"][0]["text"]
-    return "Unknown"
+    place = "Unknown"
+    region = "Unknown"
+    if "features" in response:
+        for feature in response["features"]:
+            if "place" in feature["place_type"]:
+                place = feature["text"]
+            if "region" in feature["place_type"]:
+                region = feature["text"]
+    return place, region
 
 # Streamlit UI
-st.title("📍 Bid Mileage Calculator with State Lookup")
+st.title("📍 Bid Mileage Calculator with Town + State Lookup")
 
 st.markdown("Enter coordinates manually OR upload a CSV/XLSX with columns: "
             "`Line Name`, `Launcher Coordinates`, `Receiver Coordinates`.")
@@ -109,12 +108,12 @@ if launcher_input and receiver_input:
             st.error("Could not calculate one or both distances.")
         else:
             furthest = max(dist_to_launcher, dist_to_receiver)
-            launcher_state = get_state_from_coords(launcher_coords)
-            receiver_state = get_state_from_coords(receiver_coords)
+            launcher_town, launcher_state = get_location_details(launcher_coords)
+            receiver_town, receiver_state = get_location_details(receiver_coords)
 
             st.success(f"🏁 Furthest Distance from Office: {furthest} miles")
-            st.info(f"Launcher is in: {launcher_state}")
-            st.info(f"Receiver is in: {receiver_state}")
+            st.info(f"Launcher: {launcher_town}, {launcher_state}")
+            st.info(f"Receiver: {receiver_town}, {receiver_state}")
 
     except Exception as e:
         st.error(f"Error parsing coordinates: {e}")
@@ -128,7 +127,9 @@ if uploaded_file:
             df = pd.read_excel(uploaded_file)
 
         distances = []
+        launcher_towns = []
         launcher_states = []
+        receiver_towns = []
         receiver_states = []
 
         for _, row in df.iterrows():
@@ -142,14 +143,22 @@ if uploaded_file:
                 else:
                     distances.append(max(d1, d2))
 
-                launcher_states.append(get_state_from_coords(launcher))
-                receiver_states.append(get_state_from_coords(receiver))
+                ltown, lstate = get_location_details(launcher)
+                rtown, rstate = get_location_details(receiver)
+                launcher_towns.append(ltown)
+                launcher_states.append(lstate)
+                receiver_towns.append(rtown)
+                receiver_states.append(rstate)
             except Exception:
                 distances.append(None)
+                launcher_towns.append("Unknown")
                 launcher_states.append("Unknown")
+                receiver_towns.append("Unknown")
                 receiver_states.append("Unknown")
 
+        df["Launcher Town"] = launcher_towns
         df["Launcher State"] = launcher_states
+        df["Receiver Town"] = receiver_towns
         df["Receiver State"] = receiver_states
         df["Furthest Distance (mi)"] = distances
 

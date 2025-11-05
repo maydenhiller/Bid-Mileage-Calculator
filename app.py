@@ -78,14 +78,14 @@ def get_location_details(coords):
     region = "Unknown"
     if "features" in response:
         for feature in response["features"]:
-            if "place" in feature["place_type"]:
+            if "place" in feature["place_type"] and place == "Unknown":
                 place = feature["text"]
-            if "region" in feature["place_type"]:
+            if "region" in feature["place_type"] and region == "Unknown":
                 region = feature["text"]
     return place, region
 
 # Streamlit UI
-st.title("📍 Bid Mileage Calculator with Town + State Lookup")
+st.title("📍 Bid Mileage Calculator with Town + State + Furthest Point")
 
 st.markdown("Enter coordinates manually OR upload a CSV/XLSX with columns: "
             "`Line Name`, `Launcher Coordinates`, `Receiver Coordinates`.")
@@ -108,10 +108,13 @@ if launcher_input and receiver_input:
             st.error("Could not calculate one or both distances.")
         else:
             furthest = max(dist_to_launcher, dist_to_receiver)
+            furthest_point = "Launcher" if dist_to_launcher > dist_to_receiver else "Receiver"
+
             launcher_town, launcher_state = get_location_details(launcher_coords)
             receiver_town, receiver_state = get_location_details(receiver_coords)
 
             st.success(f"🏁 Furthest Distance from Office: {furthest} miles")
+            st.info(f"Furthest point: {furthest_point}")
             st.info(f"Launcher: {launcher_town}, {launcher_state}")
             st.info(f"Receiver: {receiver_town}, {receiver_state}")
 
@@ -127,6 +130,7 @@ if uploaded_file:
             df = pd.read_excel(uploaded_file)
 
         distances = []
+        furthest_points = []
         launcher_towns = []
         launcher_states = []
         receiver_towns = []
@@ -140,8 +144,10 @@ if uploaded_file:
                 d2 = get_drive_distance(OFFICE_COORDS, receiver)
                 if d1 is None or d2 is None:
                     distances.append(None)
+                    furthest_points.append("Unknown")
                 else:
                     distances.append(max(d1, d2))
+                    furthest_points.append("Launcher" if d1 > d2 else "Receiver")
 
                 ltown, lstate = get_location_details(launcher)
                 rtown, rstate = get_location_details(receiver)
@@ -151,6 +157,7 @@ if uploaded_file:
                 receiver_states.append(rstate)
             except Exception:
                 distances.append(None)
+                furthest_points.append("Unknown")
                 launcher_towns.append("Unknown")
                 launcher_states.append("Unknown")
                 receiver_towns.append("Unknown")
@@ -161,6 +168,7 @@ if uploaded_file:
         df["Receiver Town"] = receiver_towns
         df["Receiver State"] = receiver_states
         df["Furthest Distance (mi)"] = distances
+        df["Furthest Point"] = furthest_points
 
         st.dataframe(df)
 
